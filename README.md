@@ -224,6 +224,9 @@ Since netmon exists to track *trends*, consistency matters more than peak number
 
 ### Installing Ookla's CLI
 
+> [!NOTE]
+> If you used [the automated `setup-netmon.sh` script](#automated-setup-script-linux), this is already done — it installs and switches to the Ookla CLI by default, so your system is running Ookla's engine rather than classic `speedtest-cli` out of the box. The steps below are for setting it up manually, or for switching an existing classic-`speedtest-cli` install over to Ookla later.
+
 If your reported speeds look suspiciously low compared to your known line speed (per the 500 Mbps+ note above), switch to **Ookla's official CLI** instead of `speedtest-cli`:
 
 ```bash
