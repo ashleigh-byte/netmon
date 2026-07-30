@@ -4,17 +4,21 @@
 #
 # One-shot setup for netmon on Linux, using the ashleigh-byte fork's
 # full-integration-test branch (a preview branch bundling every pending
-# PR, not yet reviewed/merged upstream) with the Ookla speedtest CLI
-# backend instead of classic speedtest-cli.
+# PR, not yet reviewed/merged upstream). Prompts you to choose between
+# the Ookla speedtest CLI backend and classic speedtest-cli -- see the
+# in-script prompt for the tradeoffs (Ookla saturates your line on every
+# test cycle to measure true capacity and reports jitter/packet loss;
+# speedtest-cli is single-connection and lighter, but under-reports on
+# fast connections and has no jitter data).
 #
-# The system-package step (nmap/git/curl) supports Debian/Ubuntu (apt),
-# Fedora/RHEL/Rocky/Alma (dnf, falling back to yum), Arch/Manjaro
-# (pacman), openSUSE (zypper), and Alpine (apk) -- everything else in
-# this script (uv, git clone, the Ookla installer, .env setup) is
-# already distro-agnostic. Only the apt path has actually been
-# exercised end-to-end; the others follow each distro's own idiomatic
-# install command for the same three packages, but test on your
-# specific distro before relying on it unattended.
+# The system-package steps (nmap/git/curl, and speedtest-cli if chosen)
+# support Debian/Ubuntu (apt), Fedora/RHEL/Rocky/Alma (dnf, falling back
+# to yum), Arch/Manjaro (pacman), openSUSE (zypper), and Alpine (apk) --
+# everything else in this script (uv, git clone, the Ookla installer,
+# .env setup) is already distro-agnostic. Only the apt path has actually
+# been exercised end-to-end; the others follow each distro's own
+# idiomatic install command for the same package names, but test on
+# your specific distro before relying on it unattended.
 #
 # Run as the normal user who will own the service (not root) -- it
 # calls sudo itself for the steps that need it.
@@ -26,8 +30,8 @@ set -euo pipefail
 
 if [ "$(id -u)" -eq 0 ]; then
     echo "Please run this as your normal user, not root/sudo -- it calls sudo itself" >&2
-    echo "only for the steps that need it (nmap sudoers grant, package install," >&2
-    echo "Ookla installer)." >&2
+    echo "only for the steps that need it (nmap sudoers grant, package installs," >&2
+    echo "speed test backend installer)." >&2
     exit 1
 fi
 
@@ -35,26 +39,55 @@ REPO_URL="https://github.com/ashleigh-byte/netmon.git"
 BRANCH="full-integration-test"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "==> Installing system dependencies (nmap, git, curl)"
+# install_pkgs pkg1 [pkg2 ...]
+# Installs the given package(s) using whichever supported package manager
+# is on PATH (apt/dnf/yum/pacman/zypper/apk), using each distro's own
+# idiomatic install command -- these three-to-four package names (nmap,
+# git, curl, speedtest-cli) are named identically across all of them, so
+# no per-distro name mapping is needed. Only the apt path has actually
+# been exercised end-to-end; exits with a clear manual-install pointer if
+# none of the six are found, rather than failing unhelpfully.
+install_pkgs() {
+    if command -v apt >/dev/null 2>&1; then
+        sudo apt install -y "$@"
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y "$@"
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum install -y "$@"
+    elif command -v pacman >/dev/null 2>&1; then
+        sudo pacman -Sy --noconfirm "$@"
+    elif command -v zypper >/dev/null 2>&1; then
+        sudo zypper --non-interactive install "$@"
+    elif command -v apk >/dev/null 2>&1; then
+        sudo apk add "$@"
+    else
+        echo "Could not detect a supported package manager (apt/dnf/yum/pacman/zypper/apk)." >&2
+        echo "Install $* yourself, then re-run this script -- it will pick up from" >&2
+        echo "the next step once those are on PATH." >&2
+        exit 1
+    fi
+}
+
+# prompt_var NAME "Prompt text" ["default"]
+# Reads a line of input into the variable named NAME. If a default is
+# given, it's shown in [brackets] and used when the user just hits Enter.
+prompt_var() {
+    local __name="$1" __prompt="$2" __default="${3:-}" __input
+    if [ -n "${__default}" ]; then
+        read -rp "${__prompt} [${__default}]: " __input
+        __input="${__input:-${__default}}"
+    else
+        read -rp "${__prompt}: " __input
+    fi
+    printf -v "${__name}" '%s' "${__input}"
+}
+
 if command -v apt >/dev/null 2>&1; then
     sudo apt update
-    sudo apt install -y nmap git curl
-elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y nmap git curl
-elif command -v yum >/dev/null 2>&1; then
-    sudo yum install -y nmap git curl
-elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -Sy --noconfirm nmap git curl
-elif command -v zypper >/dev/null 2>&1; then
-    sudo zypper --non-interactive install nmap git curl
-elif command -v apk >/dev/null 2>&1; then
-    sudo apk add nmap git curl
-else
-    echo "Could not detect a supported package manager (apt/dnf/yum/pacman/zypper/apk)." >&2
-    echo "Install nmap, git, and curl yourself, then re-run this script -- it will" >&2
-    echo "pick up from the next step once those three commands are on PATH." >&2
-    exit 1
 fi
+
+echo "==> Installing system dependencies (nmap, git, curl)"
+install_pkgs nmap git curl
 
 echo "==> Allowing passwordless sudo for nmap (needed for ARP-based device scanning)"
 echo "$(whoami) ALL=(root) NOPASSWD: $(command -v nmap)" | sudo tee /etc/sudoers.d/netmon-nmap > /dev/null
@@ -92,28 +125,47 @@ cd "${INSTALL_DIR}"
 echo "==> Installing Python dependencies via uv"
 uv sync
 
-echo "==> Installing Ookla's speedtest CLI (static binary, not speedtest-cli)"
-sudo bash install-ookla-speedtest.sh
+echo
+echo "==> Speed test backend"
+echo
+echo "  1) Ookla CLI (default, recommended on fast connections)"
+echo "     + Multi-threaded -- measures your line's true capacity accurately;"
+echo "       classic speedtest-cli under-reports on connections above roughly"
+echo "       500 Mbps, where its own single-threaded CPU overhead becomes the"
+echo "       bottleneck rather than your actual line."
+echo "     + Also reports jitter and packet loss, unlocking bufferbloat"
+echo "       reporting in netmon's AI commentary."
+echo "     - Uses noticeably more bandwidth per test: it opens several"
+echo "       parallel connections and will actively try to saturate your"
+echo "       line to measure its ceiling. This happens on every cycle"
+echo "       (every SLEEP_TIME, default 30 min), not just once -- if that"
+echo "       cycle lands while someone's mid video call or game, they may"
+echo "       notice it."
+echo
+echo "  2) speedtest-cli (classic, lighter)"
+echo "     + Single connection only -- approximates what one real application"
+echo "       actually gets, and uses far less bandwidth per test since it"
+echo "       never tries to max out the line."
+echo "     - Under-reports real throughput on very fast connections"
+echo "       (roughly 500 Mbps+)."
+echo "     - No jitter/packet-loss data -- bufferbloat reporting stays"
+echo "       inactive with this backend."
+echo
+prompt_var SPEEDTEST_BACKEND "Choose 1 or 2" "1"
+
+if [ "${SPEEDTEST_BACKEND}" = "2" ]; then
+    echo "==> Installing classic speedtest-cli"
+    install_pkgs speedtest-cli
+else
+    echo "==> Installing Ookla's speedtest CLI (static binary, not speedtest-cli)"
+    sudo bash install-ookla-speedtest.sh
+fi
 
 # ---------------------------------------------------------------------------
 # .env configuration
 # ---------------------------------------------------------------------------
 
 cp -n .env.example .env   # -n: never clobber an existing .env from a prior run
-
-# prompt_var NAME "Prompt text" ["default"]
-# Reads a line of input into the variable named NAME. If a default is
-# given, it's shown in [brackets] and used when the user just hits Enter.
-prompt_var() {
-    local __name="$1" __prompt="$2" __default="${3:-}" __input
-    if [ -n "${__default}" ]; then
-        read -rp "${__prompt} [${__default}]: " __input
-        __input="${__input:-${__default}}"
-    else
-        read -rp "${__prompt}: " __input
-    fi
-    printf -v "${__name}" '%s' "${__input}"
-}
 
 # set_env_var KEY VALUE
 # Uncomments and/or updates KEY=... in .env, or appends it if it's not

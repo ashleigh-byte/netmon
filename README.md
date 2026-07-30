@@ -68,7 +68,7 @@ Every `SLEEP_TIME` seconds (default 1800 = 30 min, configurable):
 
 ## Automated Setup Script (Linux)
 
-`setup-netmon.sh`, included in this repo, automates everything in [Quick Start](#quick-start) below in one pass: installs system dependencies, grants passwordless `sudo` for `nmap`, installs `uv` if missing, clones/checks out the repo (or just runs in place if you've already cloned it), runs `uv sync`, installs the [Ookla speedtest CLI backend](#installing-ooklas-cli) instead of classic `speedtest-cli`, and then walks you through configuring `.env` interactively — prompting for each required value, and optionally for the timing/outage/missing-device/heartbeat thresholds, with the documented default shown and accepted on a bare Enter.
+`setup-netmon.sh`, included in this repo, automates everything in [Quick Start](#quick-start) below in one pass: installs system dependencies, grants passwordless `sudo` for `nmap`, installs `uv` if missing, clones/checks out the repo (or just runs in place if you've already cloned it), runs `uv sync`, asks which speed test backend you want (see below), and then walks you through configuring `.env` interactively — prompting for each required value, and optionally for the timing/outage/missing-device/heartbeat thresholds, with the documented default shown and accepted on a bare Enter.
 
 ```bash
 git clone https://github.com/ashleigh-byte/netmon.git
@@ -79,8 +79,10 @@ bash setup-netmon.sh
 
 Run it as your normal user, not root/sudo — it calls `sudo` itself only for the steps that need it. Pass `INSTALL_DIR=/some/path` to clone somewhere other than `~/netmon` when running it standalone (e.g. downloaded via `curl` onto a fresh machine with no checkout yet).
 
+Partway through, it asks which speed test backend to install — the same tradeoff covered in [Installing Ookla's CLI](#installing-ooklas-cli) below, summarized inline at the prompt: **Ookla** (default) measures fast connections accurately and unlocks jitter/packet-loss reporting, but opens multiple parallel connections and will actively try to saturate your line on every cycle to do it, using noticeably more bandwidth each time than **classic `speedtest-cli`**, which is single-connection, lighter on your network, but under-reports on connections above roughly 500 Mbps and has no jitter data.
+
 > [!IMPORTANT]
-> **Linux only, and only the Debian/Ubuntu (`apt`) path has been exercised end-to-end.** The script also detects `dnf`, `yum`, `pacman`, `zypper`, and `apk` and uses each distro's own install command for the same three packages (`nmap`, `git`, `curl`), but those paths haven't been separately verified — test it (or just install those three packages yourself first) before relying on it unattended on a non-Debian distro. There's no macOS path; follow the manual steps below instead if you're not on Linux.
+> **Linux only, and only the Debian/Ubuntu (`apt`) path has been exercised end-to-end.** The script also detects `dnf`, `yum`, `pacman`, `zypper`, and `apk` and uses each distro's own install command for the same package names (`nmap`, `git`, `curl`, and `speedtest-cli` if you choose that backend), but those paths haven't been separately verified — test it (or just install those packages yourself first) before relying on it unattended on a non-Debian distro. There's no macOS path; follow the manual steps below instead if you're not on Linux.
 
 Once it finishes, skip ahead to [Run the Bot](#5-run-the-bot) to test with `--test-ai` and set up the systemd service — everything before that is already done.
 
@@ -225,7 +227,7 @@ Since netmon exists to track *trends*, consistency matters more than peak number
 ### Installing Ookla's CLI
 
 > [!NOTE]
-> If you used [the automated `setup-netmon.sh` script](#automated-setup-script-linux), this is already done — it installs and switches to the Ookla CLI by default, so your system is running Ookla's engine rather than classic `speedtest-cli` out of the box. The steps below are for setting it up manually, or for switching an existing classic-`speedtest-cli` install over to Ookla later.
+> If you used [the automated `setup-netmon.sh` script](#automated-setup-script-linux), this is already handled — it asks which backend you want partway through (Ookla is the suggested default, but it's your choice) and installs the one you picked. The steps below are for setting it up manually, or for switching an existing classic-`speedtest-cli` install over to Ookla later.
 
 If your reported speeds look suspiciously low compared to your known line speed (per the 500 Mbps+ note above), switch to **Ookla's official CLI** instead of `speedtest-cli`:
 
