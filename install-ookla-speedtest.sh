@@ -124,6 +124,12 @@ out = {
     "bytes_sent": d["upload"]["bytes"],
     "bytes_received": d["download"]["bytes"],
     "share": d.get("result", {}).get("url"),
+    # Ookla reports these two fields that classic speedtest-cli has no
+    # equivalent for; netmon's runner.py picks them up when present to
+    # surface jitter/bufferbloat in reports. packetLoss can be absent
+    # from Ookla's own output on some runs, hence the .get() with None.
+    "jitter": d["ping"].get("jitter"),
+    "packet_loss": d.get("packetLoss"),
     "server": {
         "url": d["server"].get("host", ""),
         "lat": "0", "lon": "0",
