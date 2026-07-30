@@ -10,6 +10,8 @@ DEFAULT_HEARTBEAT_HOST = "1.1.1.1"
 DEFAULT_HEARTBEAT_PORT = 443
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
 DEFAULT_HEARTBEAT_CONSECUTIVE_FAILURES = 3
+DEFAULT_MONITORED_DEVICES_PORT = 80
+DEFAULT_MONITORED_DEVICES_CONSECUTIVE_FAILURES = 2
 
 class Config:
     def __init__(
@@ -27,6 +29,8 @@ class Config:
         heartbeat_port: int = DEFAULT_HEARTBEAT_PORT,
         heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         heartbeat_consecutive_failures: int = DEFAULT_HEARTBEAT_CONSECUTIVE_FAILURES,
+        monitored_devices: list[tuple[str, int]] | None = None,
+        monitored_devices_consecutive_failures: int = DEFAULT_MONITORED_DEVICES_CONSECUTIVE_FAILURES,
     ):
         self.ai_api_key: str = ai_api_key
         self.db_path: str = db_path
@@ -41,6 +45,8 @@ class Config:
         self.heartbeat_port: int = heartbeat_port
         self.heartbeat_interval_seconds: int = heartbeat_interval_seconds
         self.heartbeat_consecutive_failures: int = heartbeat_consecutive_failures
+        self.monitored_devices: list[tuple[str, int]] = monitored_devices or []
+        self.monitored_devices_consecutive_failures: int = monitored_devices_consecutive_failures
 
     @staticmethod
     def _parse_args():
@@ -109,6 +115,40 @@ class Config:
         if heartbeat_consecutive_failures <= 0:
             raise RuntimeError(f"HEARTBEAT_CONSECUTIVE_FAILURES must be positive, got: {heartbeat_consecutive_failures}")
 
+        monitored_devices_raw = os.getenv("MONITORED_DEVICES", "").strip()
+        monitored_devices: list[tuple[str, int]] = []
+        for entry in monitored_devices_raw.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if ":" in entry:
+                host, _, port_str = entry.rpartition(":")
+                try:
+                    port = int(port_str)
+                except ValueError:
+                    raise RuntimeError(f"MONITORED_DEVICES entry {entry!r} has a non-integer port")
+            else:
+                host, port = entry, DEFAULT_MONITORED_DEVICES_PORT
+            if not host.strip():
+                raise RuntimeError(f"MONITORED_DEVICES entry {entry!r} is missing a host")
+            if not (0 < port < 65536):
+                raise RuntimeError(f"MONITORED_DEVICES entry {entry!r} has a port out of range (1-65535)")
+            monitored_devices.append((host, port))
+
+        try:
+            monitored_devices_consecutive_failures = int(
+                os.getenv("MONITORED_DEVICES_CONSECUTIVE_FAILURES", DEFAULT_MONITORED_DEVICES_CONSECUTIVE_FAILURES)
+            )
+        except ValueError:
+            raise RuntimeError(
+                f"MONITORED_DEVICES_CONSECUTIVE_FAILURES must be an integer, got: "
+                f"{os.getenv('MONITORED_DEVICES_CONSECUTIVE_FAILURES')!r}"
+            )
+        if monitored_devices_consecutive_failures <= 0:
+            raise RuntimeError(
+                f"MONITORED_DEVICES_CONSECUTIVE_FAILURES must be positive, got: {monitored_devices_consecutive_failures}"
+            )
+
         if notifier == "telegram":
             if tg_bot_token.strip() == "":
                 raise RuntimeError("TG_BOT_TOKEN not found or empty in environment")
@@ -123,4 +163,5 @@ class Config:
             tg_bot_token, tg_chat_id, discord_webhook_url,
             request_timeout, heartbeat_host, heartbeat_port,
             heartbeat_interval_seconds, heartbeat_consecutive_failures,
+            monitored_devices, monitored_devices_consecutive_failures,
         )
