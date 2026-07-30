@@ -371,16 +371,19 @@ This is deliberately different from how a *slow or unreachable AI backend* is ha
 netmon/
 ├── assets/                        # Logo & documentation media assets
 ├── graphs/                        # Generated 24h matplotlib graph images
+├── setup-netmon.sh                # One-shot automated setup script (Linux)
+├── install-ookla-speedtest.sh     # Optional: installs the Ookla speedtest CLI backend
 ├── main.py                        # Main execution loop & orchestrator
-├── runner.py                      # Speedtest-cli and nmap scan execution & parsing
+├── runner.py                      # Speed test and nmap scan execution & parsing
 ├── sqlite.py                      # SQLite database operations & schema management
-├── models.py                      # Domain data models (NetworkMetric, SpeedTest)
+├── models.py                      # Domain data models (NetworkMetric, NetworkDevice, SpeedTest)
 ├── graphs.py                      # Matplotlib graph rendering engine
 ├── ai.py                          # OpenAI API client & sarcastic text generator
 ├── tg.py                          # Telegram bot dispatch helper
 ├── discord_hook.py                # Discord webhook dispatch helper
 ├── config.py                      # Environment variable validation & config
 ├── notifier.py                    # Notifier protocol & shared chat-action enum
+├── .env.example                   # Template for your .env config file
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Locked, reproducible dependency versions
 └── LICENSE                        # MIT License file
