@@ -15,6 +15,10 @@ DEFAULT_RETENTION_DAYS = 90
 DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS = 3
 DEFAULT_DEVICE_MISSING_RELIABILITY = 0.8
 DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS = 2
+DEFAULT_HEARTBEAT_HOST = "1.1.1.1"
+DEFAULT_HEARTBEAT_PORT = 443
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
+DEFAULT_HEARTBEAT_CONSECUTIVE_FAILURES = 3
 
 class Config:
     def __init__(
@@ -39,6 +43,10 @@ class Config:
         device_missing_lookback_days: int = DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS,
         device_missing_reliability: float = DEFAULT_DEVICE_MISSING_RELIABILITY,
         device_missing_consecutive_readings: int = DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS,
+        heartbeat_host: str = DEFAULT_HEARTBEAT_HOST,
+        heartbeat_port: int = DEFAULT_HEARTBEAT_PORT,
+        heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+        heartbeat_consecutive_failures: int = DEFAULT_HEARTBEAT_CONSECUTIVE_FAILURES,
     ):
         self.ai_api_key: str = ai_api_key
         self.db_path: str = db_path
@@ -60,6 +68,10 @@ class Config:
         self.device_missing_lookback_days: int = device_missing_lookback_days
         self.device_missing_reliability: float = device_missing_reliability
         self.device_missing_consecutive_readings: int = device_missing_consecutive_readings
+        self.heartbeat_host: str = heartbeat_host
+        self.heartbeat_port: int = heartbeat_port
+        self.heartbeat_interval_seconds: int = heartbeat_interval_seconds
+        self.heartbeat_consecutive_failures: int = heartbeat_consecutive_failures
 
     @staticmethod
     def _parse_args():
@@ -190,6 +202,31 @@ class Config:
         if device_missing_consecutive_readings <= 0:
             raise RuntimeError(f"DEVICE_MISSING_CONSECUTIVE_READINGS must be positive, got: {device_missing_consecutive_readings}")
 
+        heartbeat_host = os.getenv("HEARTBEAT_HOST", DEFAULT_HEARTBEAT_HOST)
+        if heartbeat_host.strip() == "":
+            raise RuntimeError("HEARTBEAT_HOST cannot be empty")
+
+        try:
+            heartbeat_port = int(os.getenv("HEARTBEAT_PORT", DEFAULT_HEARTBEAT_PORT))
+        except ValueError:
+            raise RuntimeError(f"HEARTBEAT_PORT must be an integer, got: {os.getenv('HEARTBEAT_PORT')!r}")
+        if not (0 < heartbeat_port < 65536):
+            raise RuntimeError(f"HEARTBEAT_PORT must be between 1 and 65535, got: {heartbeat_port}")
+
+        try:
+            heartbeat_interval_seconds = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", DEFAULT_HEARTBEAT_INTERVAL_SECONDS))
+        except ValueError:
+            raise RuntimeError(f"HEARTBEAT_INTERVAL_SECONDS must be an integer, got: {os.getenv('HEARTBEAT_INTERVAL_SECONDS')!r}")
+        if heartbeat_interval_seconds <= 0:
+            raise RuntimeError(f"HEARTBEAT_INTERVAL_SECONDS must be positive, got: {heartbeat_interval_seconds}")
+
+        try:
+            heartbeat_consecutive_failures = int(os.getenv("HEARTBEAT_CONSECUTIVE_FAILURES", DEFAULT_HEARTBEAT_CONSECUTIVE_FAILURES))
+        except ValueError:
+            raise RuntimeError(f"HEARTBEAT_CONSECUTIVE_FAILURES must be an integer, got: {os.getenv('HEARTBEAT_CONSECUTIVE_FAILURES')!r}")
+        if heartbeat_consecutive_failures <= 0:
+            raise RuntimeError(f"HEARTBEAT_CONSECUTIVE_FAILURES must be positive, got: {heartbeat_consecutive_failures}")
+
         if notifier == "telegram":
             if tg_bot_token.strip() == "":
                 raise RuntimeError("TG_BOT_TOKEN not found or empty in environment")
@@ -207,4 +244,6 @@ class Config:
             outage_download_threshold_mbps, outage_ping_threshold_ms, outage_consecutive_readings,
             retention_days, device_missing_lookback_days,
             device_missing_reliability, device_missing_consecutive_readings,
+            heartbeat_host, heartbeat_port,
+            heartbeat_interval_seconds, heartbeat_consecutive_failures,
         )
