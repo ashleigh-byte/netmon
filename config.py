@@ -6,6 +6,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 DEFAULT_REQUEST_TIMEOUT = 30
+DEFAULT_SLEEP_TIME = 1800
+DEFAULT_REPORT_CYCLE_COUNT = 8
+DEFAULT_OUTAGE_DOWNLOAD_THRESHOLD_MBPS = 20.0
+DEFAULT_OUTAGE_PING_THRESHOLD_MS = 150.0
+DEFAULT_OUTAGE_CONSECUTIVE_READINGS = 2
+DEFAULT_RETENTION_DAYS = 90
+DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS = 3
+DEFAULT_DEVICE_MISSING_RELIABILITY = 0.8
+DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS = 2
 DEFAULT_HEARTBEAT_HOST = "1.1.1.1"
 DEFAULT_HEARTBEAT_PORT = 443
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
@@ -25,6 +34,17 @@ class Config:
         tg_chat_id: str = "",
         discord_webhook_url: str = "",
         request_timeout: int = DEFAULT_REQUEST_TIMEOUT,
+        sleep_time: int = DEFAULT_SLEEP_TIME,
+        report_cycle_count: int = DEFAULT_REPORT_CYCLE_COUNT,
+        test_ai: bool = False,
+        ai_context_size: int | None = None,
+        outage_download_threshold_mbps: float = DEFAULT_OUTAGE_DOWNLOAD_THRESHOLD_MBPS,
+        outage_ping_threshold_ms: float = DEFAULT_OUTAGE_PING_THRESHOLD_MS,
+        outage_consecutive_readings: int = DEFAULT_OUTAGE_CONSECUTIVE_READINGS,
+        retention_days: int = DEFAULT_RETENTION_DAYS,
+        device_missing_lookback_days: int = DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS,
+        device_missing_reliability: float = DEFAULT_DEVICE_MISSING_RELIABILITY,
+        device_missing_consecutive_readings: int = DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS,
         heartbeat_host: str = DEFAULT_HEARTBEAT_HOST,
         heartbeat_port: int = DEFAULT_HEARTBEAT_PORT,
         heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
@@ -41,6 +61,17 @@ class Config:
         self.tg_chat_id: str = tg_chat_id
         self.discord_webhook_url: str = discord_webhook_url
         self.request_timeout: int = request_timeout
+        self.sleep_time: int = sleep_time
+        self.report_cycle_count: int = report_cycle_count
+        self.test_ai: bool = test_ai
+        self.ai_context_size: int | None = ai_context_size
+        self.outage_download_threshold_mbps: float = outage_download_threshold_mbps
+        self.outage_ping_threshold_ms: float = outage_ping_threshold_ms
+        self.outage_consecutive_readings: int = outage_consecutive_readings
+        self.retention_days: int = retention_days
+        self.device_missing_lookback_days: int = device_missing_lookback_days
+        self.device_missing_reliability: float = device_missing_reliability
+        self.device_missing_consecutive_readings: int = device_missing_consecutive_readings
         self.heartbeat_host: str = heartbeat_host
         self.heartbeat_port: int = heartbeat_port
         self.heartbeat_interval_seconds: int = heartbeat_interval_seconds
@@ -56,6 +87,15 @@ class Config:
             type=str,
             default=".env",
             help="Path to the .env file (default: .env)"
+        )
+        parser.add_argument(
+            "--test-ai",
+            action="store_true",
+            help="Force the very first cycle to run the full detailed report "
+                 "(AI commentary + graph + notifier delivery), then continue on "
+                 "the normal REPORT_CYCLE_COUNT schedule for every cycle after. "
+                 "Useful for verifying the AI backend and notifier work without "
+                 "waiting for the regular cadence or permanently changing config."
         )
         return parser.parse_args()
 
@@ -89,6 +129,84 @@ class Config:
         request_timeout = int(os.getenv("REQUEST_TIMEOUT", DEFAULT_REQUEST_TIMEOUT))
         if request_timeout <= 0:
             raise RuntimeError(f"REQUEST_TIMEOUT must be positive, got: {request_timeout}")
+
+        try:
+            sleep_time = int(os.getenv("SLEEP_TIME", DEFAULT_SLEEP_TIME))
+        except ValueError:
+            raise RuntimeError(f"SLEEP_TIME must be an integer number of seconds, got: {os.getenv('SLEEP_TIME')!r}")
+        if sleep_time <= 0:
+            raise RuntimeError(f"SLEEP_TIME must be positive, got: {sleep_time}")
+
+        try:
+            report_cycle_count = int(os.getenv("REPORT_CYCLE_COUNT", DEFAULT_REPORT_CYCLE_COUNT))
+        except ValueError:
+            raise RuntimeError(f"REPORT_CYCLE_COUNT must be an integer, got: {os.getenv('REPORT_CYCLE_COUNT')!r}")
+        if report_cycle_count <= 0:
+            raise RuntimeError(f"REPORT_CYCLE_COUNT must be positive, got: {report_cycle_count}")
+
+        # Optional and unset by default — only meaningful for local
+        # OpenAI-compatible servers like Ollama, whose default context
+        # window can silently truncate a long system prompt + a day's
+        # worth of history once combined. Left as None, nothing extra is
+        # sent, so cloud OpenAI usage is unaffected.
+        ai_context_size_raw = os.getenv("AI_CONTEXT_SIZE")
+        ai_context_size: int | None = None
+        if ai_context_size_raw is not None and ai_context_size_raw.strip() != "":
+            try:
+                ai_context_size = int(ai_context_size_raw)
+            except ValueError:
+                raise RuntimeError(f"AI_CONTEXT_SIZE must be an integer, got: {ai_context_size_raw!r}")
+            if ai_context_size <= 0:
+                raise RuntimeError(f"AI_CONTEXT_SIZE must be positive, got: {ai_context_size}")
+
+        try:
+            outage_download_threshold_mbps = float(os.getenv("OUTAGE_DOWNLOAD_THRESHOLD_MBPS", DEFAULT_OUTAGE_DOWNLOAD_THRESHOLD_MBPS))
+        except ValueError:
+            raise RuntimeError(f"OUTAGE_DOWNLOAD_THRESHOLD_MBPS must be a number, got: {os.getenv('OUTAGE_DOWNLOAD_THRESHOLD_MBPS')!r}")
+        if outage_download_threshold_mbps <= 0:
+            raise RuntimeError(f"OUTAGE_DOWNLOAD_THRESHOLD_MBPS must be positive, got: {outage_download_threshold_mbps}")
+
+        try:
+            outage_ping_threshold_ms = float(os.getenv("OUTAGE_PING_THRESHOLD_MS", DEFAULT_OUTAGE_PING_THRESHOLD_MS))
+        except ValueError:
+            raise RuntimeError(f"OUTAGE_PING_THRESHOLD_MS must be a number, got: {os.getenv('OUTAGE_PING_THRESHOLD_MS')!r}")
+        if outage_ping_threshold_ms <= 0:
+            raise RuntimeError(f"OUTAGE_PING_THRESHOLD_MS must be positive, got: {outage_ping_threshold_ms}")
+
+        try:
+            outage_consecutive_readings = int(os.getenv("OUTAGE_CONSECUTIVE_READINGS", DEFAULT_OUTAGE_CONSECUTIVE_READINGS))
+        except ValueError:
+            raise RuntimeError(f"OUTAGE_CONSECUTIVE_READINGS must be an integer, got: {os.getenv('OUTAGE_CONSECUTIVE_READINGS')!r}")
+        if outage_consecutive_readings <= 0:
+            raise RuntimeError(f"OUTAGE_CONSECUTIVE_READINGS must be positive, got: {outage_consecutive_readings}")
+
+        try:
+            retention_days = int(os.getenv("RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
+        except ValueError:
+            raise RuntimeError(f"RETENTION_DAYS must be an integer, got: {os.getenv('RETENTION_DAYS')!r}")
+        if retention_days <= 0:
+            raise RuntimeError(f"RETENTION_DAYS must be positive, got: {retention_days}")
+
+        try:
+            device_missing_lookback_days = int(os.getenv("DEVICE_MISSING_LOOKBACK_DAYS", DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS))
+        except ValueError:
+            raise RuntimeError(f"DEVICE_MISSING_LOOKBACK_DAYS must be an integer, got: {os.getenv('DEVICE_MISSING_LOOKBACK_DAYS')!r}")
+        if device_missing_lookback_days <= 0:
+            raise RuntimeError(f"DEVICE_MISSING_LOOKBACK_DAYS must be positive, got: {device_missing_lookback_days}")
+
+        try:
+            device_missing_reliability = float(os.getenv("DEVICE_MISSING_RELIABILITY", DEFAULT_DEVICE_MISSING_RELIABILITY))
+        except ValueError:
+            raise RuntimeError(f"DEVICE_MISSING_RELIABILITY must be a number, got: {os.getenv('DEVICE_MISSING_RELIABILITY')!r}")
+        if not (0 < device_missing_reliability <= 1):
+            raise RuntimeError(f"DEVICE_MISSING_RELIABILITY must be between 0 (exclusive) and 1 (inclusive), got: {device_missing_reliability}")
+
+        try:
+            device_missing_consecutive_readings = int(os.getenv("DEVICE_MISSING_CONSECUTIVE_READINGS", DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS))
+        except ValueError:
+            raise RuntimeError(f"DEVICE_MISSING_CONSECUTIVE_READINGS must be an integer, got: {os.getenv('DEVICE_MISSING_CONSECUTIVE_READINGS')!r}")
+        if device_missing_consecutive_readings <= 0:
+            raise RuntimeError(f"DEVICE_MISSING_CONSECUTIVE_READINGS must be positive, got: {device_missing_consecutive_readings}")
 
         heartbeat_host = os.getenv("HEARTBEAT_HOST", DEFAULT_HEARTBEAT_HOST)
         if heartbeat_host.strip() == "":
@@ -161,7 +279,12 @@ class Config:
         return cls(
             ai_key, db_path, model, base_url, notifier,
             tg_bot_token, tg_chat_id, discord_webhook_url,
-            request_timeout, heartbeat_host, heartbeat_port,
+            request_timeout, sleep_time, report_cycle_count,
+            args.test_ai, ai_context_size,
+            outage_download_threshold_mbps, outage_ping_threshold_ms, outage_consecutive_readings,
+            retention_days, device_missing_lookback_days,
+            device_missing_reliability, device_missing_consecutive_readings,
+            heartbeat_host, heartbeat_port,
             heartbeat_interval_seconds, heartbeat_consecutive_failures,
             monitored_devices, monitored_devices_consecutive_failures,
         )

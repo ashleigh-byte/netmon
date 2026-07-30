@@ -31,13 +31,14 @@ Every 4 hours, it delivers a **detailed report** complete with a 24-hour trend g
 
 ## Features & Workflow
 
-Every 30 minutes (`SLEEP_TIME` in `main.py`, default 1800 seconds):
+Every `SLEEP_TIME` seconds (default 1800 = 30 min, configurable):
 
 1. **Speed Test:** Measures download/upload speeds, ping latency, ISP, and test server details using `speedtest-cli` (see [the note on measurement mode](#a-note-on-measurement-mode)).
-2. **LAN Scan:** Scans the local subnet using `nmap` ARP scan to count active connected devices.
-3. **Local Storage:** Saves metrics & device tallies directly to a local `metrics.sql` SQLite database.
+2. **LAN Scan:** Scans the local subnet using `nmap` ARP scan to identify active devices, including MAC address, vendor, and hostname where resolvable (see [Device Watch](#device-watch)).
+3. **Local Storage:** Saves metrics & device details directly to a local `metrics.sql` SQLite database, automatically pruning rows older than `RETENTION_DAYS` (default 90 days) so the file doesn't grow forever.
 4. **Status Alert:** Sends a concise status update to your chosen notifier (*"all good"* or *"line is dying"*).
-5. **24h AI Report:** Every 8th cycle (every 4h), generates a **24-hour trend graph** via `matplotlib` alongside a sarcastic LLM analysis of network load and speed fluctuations.
+5. **24h AI Report:** Every `REPORT_CYCLE_COUNT` cycles (default 8, i.e. ~4h), generates a **24-hour trend graph** via `matplotlib` alongside a sarcastic LLM analysis of network load, speed fluctuations, and any notable new devices on the network.
+6. **Instant Outage Alerting:** Watches every cycle for an outright failed speed test or a degraded reading, alerting immediately rather than waiting for the next scheduled report (see [Instant Outage & Degradation Alerting](#instant-outage--degradation-alerting)).
 
 ---
 
@@ -62,6 +63,28 @@ Every 30 minutes (`SLEEP_TIME` in `main.py`, default 1800 seconds):
 * **System Binaries:** `nmap` and `speedtest-cli` installed system-wide.
 * **Passwordless `sudo` for `nmap`** — device counting needs a real ARP scan (raw sockets), which requires root; see one-time setup below.
 * **Tokens:** either a Telegram Bot Token + Chat ID, *or* a Discord Webhook URL (see [Notifications](#notifications-telegram-or-discord)), plus an API key for your OpenAI-compatible provider (not needed if you point `AI_BASE_URL` at a local LLM server).
+
+---
+
+## Automated Setup Script (Linux)
+
+`setup-netmon.sh`, included in this repo, automates everything in [Quick Start](#quick-start) below in one pass: installs system dependencies, grants passwordless `sudo` for `nmap`, installs `uv` if missing, clones/checks out the repo (or just runs in place if you've already cloned it), runs `uv sync`, asks which speed test backend you want (see below), and then walks you through configuring `.env` interactively — prompting for each required value, and optionally for the timing/outage/missing-device/heartbeat thresholds, with the documented default shown and accepted on a bare Enter.
+
+```bash
+git clone https://github.com/ashleigh-byte/netmon.git
+cd netmon
+git checkout full-integration-test
+bash setup-netmon.sh
+```
+
+Run it as your normal user, not root/sudo — it calls `sudo` itself only for the steps that need it. Pass `INSTALL_DIR=/some/path` to clone somewhere other than `~/netmon` when running it standalone (e.g. downloaded via `curl` onto a fresh machine with no checkout yet).
+
+Partway through, it asks which speed test backend to install — the same tradeoff covered in [Installing Ookla's CLI](#installing-ooklas-cli) below, summarized inline at the prompt: **Ookla** (default) measures fast connections accurately and unlocks jitter/packet-loss reporting, but opens multiple parallel connections and will actively try to saturate your line on every cycle to do it, using noticeably more bandwidth each time than **classic `speedtest-cli`**, which is single-connection, lighter on your network, but under-reports on connections above roughly 500 Mbps and has no jitter data.
+
+> [!IMPORTANT]
+> **Linux only, and only the Debian/Ubuntu (`apt`) path has been exercised end-to-end.** The script also detects `dnf`, `yum`, `pacman`, `zypper`, and `apk` and uses each distro's own install command for the same package names (`nmap`, `git`, `curl`, and `speedtest-cli` if you choose that backend), but those paths haven't been separately verified — test it (or just install those packages yourself first) before relying on it unattended on a non-Debian distro. There's no macOS path; follow the manual steps below instead if you're not on Linux.
+
+Once it finishes, skip ahead to [Run the Bot](#5-run-the-bot) to test with `--test-ai` and set up the systemd service — everything before that is already done.
 
 ---
 
@@ -129,6 +152,10 @@ cp .env.example .env
 | `DISCORD_WEBHOOK_URL` | Discord channel webhook URL — required if `NOTIFIER=discord` |
 | `DB_PATH` | SQLite database file path (e.g. `metrics.sql`) |
 | `REQUEST_TIMEOUT` | *Optional.* HTTP timeout in seconds for Telegram/Discord requests (positive integer, default `30`) |
+| `SLEEP_TIME` | *Optional.* Seconds between each speed test + device scan cycle (positive integer, default `1800`) |
+| `REPORT_CYCLE_COUNT` | *Optional.* How many cycles between detailed AI reports with graph (positive integer, default `8`) |
+| `AI_CONTEXT_SIZE` | *Optional.* Sets Ollama's `num_ctx` per-request, to stop a local model's default context window from silently truncating a long prompt + a day of history. No effect on cloud OpenAI — leave unset unless self-hosting the AI backend. |
+| `RETENTION_DAYS` | *Optional.* How many days of metrics/device-scan history to keep before old rows are pruned automatically (positive integer, default `90`) |
 
 > [!TIP]
 > **You're not locked into OpenAI.** `ai.py` talks to any OpenAI-compatible endpoint, so a local inference server (e.g. [Ollama](https://ollama.com), LM Studio) works too — just point `AI_BASE_URL` at it. For report quality that holds up, use a model with **at least ~7B parameters**; a solid local pick is **Gemma 4 12B at 4-bit (QAT) quantization** (`gemma4:12b-it-qat` via Ollama), which fits comfortably on 16GB of RAM.
@@ -143,6 +170,9 @@ uv run main.py
 
 > [!TIP]
 > Run the bot inside `tmux`/`screen` or set it up as a system service (`systemd`/`launchd`) to keep it running 24/7 in the background.
+
+> [!TIP]
+> Pass `--test-ai` (`uv run main.py --test-ai`) to force the very first cycle to run the full detailed report (AI commentary + graph + notifier delivery) immediately, then resume the normal `REPORT_CYCLE_COUNT` schedule automatically — no config to remember to revert afterward. Useful for verifying your AI backend and notifier work without waiting for the regular cadence.
 
 ---
 
@@ -174,6 +204,8 @@ If `NOTIFIER` is left unset, netmon defaults to Telegram, so existing setups kee
 
 Discord delivery reuses the same report content as Telegram — the existing HTML formatting (`<b>`, `<code>`, `<pre>`) is automatically converted to Discord markdown, so reports render correctly in either service without any changes to the AI prompt.
 
+Reports are sent as an embed on Discord (4096-character limit) rather than plain message content (which Discord hard-caps at 2000), and Telegram messages/captions are safety-net truncated at their own platform limits (4096/1024 chars) — so a longer-than-expected AI report gets a visible `…` truncation instead of being silently cut off mid-sentence.
+
 > [!WARNING]
 > Treat both the Telegram bot token and the Discord webhook URL as secrets — anyone with either can post messages through your bot/webhook. Don't commit them to version control (`.env` is already git-ignored).
 
@@ -188,9 +220,44 @@ Multi-threaded speed tests (including Ookla's official CLI, and the speedtest.ne
 Two consequences worth knowing:
 
 * **Don't compare netmon's numbers directly against speedtest.net in a browser.** The browser test is multi-threaded and will read higher. That gap is methodology, not a fault in your line.
-* **On very fast links (roughly 500 Mbps+), expect single-stream figures to sit well below your subscribed speed.** Beyond the methodology gap, `speedtest-cli` is pure Python, so at gigabit speeds its own CPU overhead starts contributing too.
+* **On very fast links (roughly 500 Mbps+), expect single-stream figures to sit well below your subscribed speed.** Beyond the methodology gap, `speedtest-cli` is pure Python, so at gigabit speeds its own CPU overhead starts contributing too — see [Installing Ookla's CLI](#installing-ooklas-cli) below if this matters for your connection.
 
 Since netmon exists to track *trends*, consistency matters more than peak numbers: keep one measurement method for the lifetime of your database. Swapping the backend mid-history puts a step change in your 24-hour graph that the AI commentary will faithfully report as a real speed jump.
+
+### Installing Ookla's CLI
+
+> [!NOTE]
+> If you used [the automated `setup-netmon.sh` script](#automated-setup-script-linux), this is already handled — it asks which backend you want partway through (Ookla is the suggested default, but it's your choice) and installs the one you picked. The steps below are for setting it up manually, or for switching an existing classic-`speedtest-cli` install over to Ookla later.
+
+If your reported speeds look suspiciously low compared to your known line speed (per the 500 Mbps+ note above), switch to **Ookla's official CLI** instead of `speedtest-cli`:
+
+```bash
+sudo bash install-ookla-speedtest.sh
+```
+
+This pulls Ookla's static binary tarball directly (matched to your CPU architecture: x86_64, aarch64, armhf, or i386) rather than adding Ookla's apt repository. That avoids a real failure mode on less mainstream distros/architectures (e.g. Armbian, Orange Pi) where the apt repo doesn't carry a build for the exact distro/arch combination — an apt-based install can fail partway through, after the repo keyring is already added, leaving the system half-configured. This script makes no system changes at all if the download fails.
+
+No application code changes are required — netmon keeps calling `speedtest --secure --single --json` exactly as before, now served by a wrapper around Ookla's engine that also reports jitter and packet loss (see [Jitter & Bufferbloat](#jitter--bufferbloat-ookla-backend-only) below).
+
+### Jitter & Bufferbloat (Ookla backend only)
+
+Classic `speedtest-cli` has no jitter or packet-loss data. If you instead run netmon against an Ookla-compatible speed test backend that reports those fields, netmon picks them up automatically and surfaces them in both mini and detailed reports, alongside a note from the AI treating high jitter or nonzero packet loss as a sign of bufferbloat — a connection can have great raw Mbps numbers and still feel laggy under load if jitter is high. This is entirely additive: nothing changes in reports if your backend doesn't provide this data.
+
+---
+
+## Device Watch
+
+Every device scan records each device's MAC address, vendor (resolved from `nmap`'s built-in OUI database), and hostname where available. `nmap` can only resolve a MAC for hosts on the same local subnet it can ARP directly — off-subnet or otherwise hidden devices are still counted, just not identified. A device with no resolvable MAC is never flagged by either check below, since there's no reliable identity to compare against.
+
+**New devices:** the detailed AI report includes a **Device Watch** section that flags any device whose MAC hasn't been seen on the network in the last 14 days, alongside a vendor-count breakdown of everything currently online.
+
+**Missing devices:** the reverse case — netmon flags a device as "reliably known" once it's been seen in at least `DEVICE_MISSING_RELIABILITY` of scans over the last `DEVICE_MISSING_LOOKBACK_DAYS`. If a reliably-known device then vanishes for `DEVICE_MISSING_CONSECUTIVE_READINGS` consecutive checks, netmon sends an instant alert, and another once it reappears with how long it was gone.
+
+| Variable | Description |
+| :--- | :--- |
+| `DEVICE_MISSING_LOOKBACK_DAYS` | *Optional.* How far back to look when judging whether a device is reliably known (positive integer, default `3`) |
+| `DEVICE_MISSING_RELIABILITY` | *Optional.* Fraction of scans in the lookback window a device must appear in to count as reliably known (0 exclusive–1 inclusive, default `0.8`) |
+| `DEVICE_MISSING_CONSECUTIVE_READINGS` | *Optional.* Consecutive missing checks before alerting (positive integer, default `2`) |
 
 ---
 
@@ -260,11 +327,15 @@ Server: <b>New York</b>
 Download: 178.5 Mbps
 Upload: 45.2 Mbps
 Ping: 23.1 ms
+Jitter: 4.2 ms | Packet Loss: 0.0%
 Devices Online: 9
 </pre>
 
 <b>24-Hour Dynamics Analysis</b>
 Over the last 24 hours, the download speed averaged <code>140 Mbps</code>, but we saw a massive drop to <code>20 Mbps</code> at 8:00 PM right as device count jumped from <code>4</code> to <code>11 devices</code>. Clearly, someone's hogging the bandwidth or the ISP's mice were busy chewing on the fiber line again. Latency remained stable except for a brief spike during peak hours.
+
+<b>Device Watch</b>
+One new gadget joined the party today: a device with no vendor or hostname info at all — worth a second glance. Everything else is the same suspects as always.
 
 <b>Data Transfer (Latest Test)</b>
 <pre>
@@ -276,6 +347,37 @@ Uploaded: 70.0 MB
 Expect periodic speed drops whenever local freeloaders stream 4K movies or the ISP potato infrastructure struggles.
 ```
 
+> [!NOTE]
+> The AI is only ever asked for three short text fields (the dynamics analysis, the Device Watch line, and the conclusion) — the surrounding HTML structure above is assembled deterministically in code, not generated by the model. This keeps report formatting consistent regardless of which LLM is behind `AI_BASE_URL`, including smaller local models that would otherwise struggle to reproduce a long literal template reliably. The `Jitter` line only appears when your speed test backend reports it (see [Jitter & Bufferbloat](#jitter--bufferbloat-ookla-backend-only)) — it's silently omitted otherwise.
+
+---
+
+## Instant Outage & Degradation Alerting
+
+Waiting for the next scheduled detailed report to notice an outage could mean a multi-hour delay. netmon instead watches every cycle:
+
+* **Outage:** the speed test itself fails outright for `OUTAGE_CONSECUTIVE_READINGS` consecutive cycles.
+* **Degradation:** a successful reading falls below `OUTAGE_DOWNLOAD_THRESHOLD_MBPS` or above `OUTAGE_PING_THRESHOLD_MS` for the same number of consecutive cycles.
+
+Each fires an alert once per episode (not every cycle, to avoid spam), and again once the connection recovers, with how long the episode lasted.
+
+| Variable | Description |
+| :--- | :--- |
+| `OUTAGE_DOWNLOAD_THRESHOLD_MBPS` | *Optional.* Download speed below which a reading counts as degraded (positive number, default `20`) |
+| `OUTAGE_PING_THRESHOLD_MS` | *Optional.* Ping above which a reading counts as degraded (positive number, default `150`) |
+| `OUTAGE_CONSECUTIVE_READINGS` | *Optional.* Consecutive bad/failed readings before alerting (positive integer, default `2`) |
+
+> [!NOTE]
+> A failing or degraded speed test is treated as the exact condition this tool exists to detect, not a bug in netmon — it alerts and keeps retrying every cycle rather than crashing the process (see [Reliability](#reliability) below for the genuine-infra-failure case, which is handled differently on purpose).
+
+---
+
+## Reliability
+
+Speed test, device scan, database, or notifier-delivery failures are **never silently retried**. If one of these fails, netmon makes a best-effort attempt to post an alert to your configured notifier — so the failure is visible without checking server logs — then crashes rather than looping on a broken state. Check the service logs (`journalctl -u netmon` if running under `systemd`, or wherever your process manager sends output) for the full traceback, and your process manager's restart policy will bring it back up.
+
+This is deliberately different from how a *slow or unreachable AI backend* is handled: that degrades gracefully (the report still sends, just without AI commentary) rather than crashing, since a flaky LLM endpoint isn't the kind of infrastructure failure worth stopping the whole monitor over.
+
 ---
 
 ## Project Structure
@@ -284,16 +386,19 @@ Expect periodic speed drops whenever local freeloaders stream 4K movies or the I
 netmon/
 ├── assets/                        # Logo & documentation media assets
 ├── graphs/                        # Generated 24h matplotlib graph images
+├── setup-netmon.sh                # One-shot automated setup script (Linux)
+├── install-ookla-speedtest.sh     # Optional: installs the Ookla speedtest CLI backend
 ├── main.py                        # Main execution loop & orchestrator
-├── runner.py                      # Speedtest-cli and nmap scan execution & parsing
+├── runner.py                      # Speed test and nmap scan execution & parsing
 ├── sqlite.py                      # SQLite database operations & schema management
-├── models.py                      # Domain data models (NetworkMetric, SpeedTest)
+├── models.py                      # Domain data models (NetworkMetric, NetworkDevice, SpeedTest)
 ├── graphs.py                      # Matplotlib graph rendering engine
 ├── ai.py                          # OpenAI API client & sarcastic text generator
 ├── tg.py                          # Telegram bot dispatch helper
 ├── discord_hook.py                # Discord webhook dispatch helper
 ├── config.py                      # Environment variable validation & config
 ├── notifier.py                    # Notifier protocol & shared chat-action enum
+├── .env.example                   # Template for your .env config file
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Locked, reproducible dependency versions
 └── LICENSE                        # MIT License file
