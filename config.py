@@ -49,7 +49,7 @@ class Config:
         heartbeat_port: int = DEFAULT_HEARTBEAT_PORT,
         heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         heartbeat_consecutive_failures: int = DEFAULT_HEARTBEAT_CONSECUTIVE_FAILURES,
-        monitored_devices: list[tuple[str, int]] | None = None,
+        monitored_devices: list[tuple[str | None, str, int]] | None = None,
         monitored_devices_consecutive_failures: int = DEFAULT_MONITORED_DEVICES_CONSECUTIVE_FAILURES,
     ):
         self.ai_api_key: str = ai_api_key
@@ -76,7 +76,7 @@ class Config:
         self.heartbeat_port: int = heartbeat_port
         self.heartbeat_interval_seconds: int = heartbeat_interval_seconds
         self.heartbeat_consecutive_failures: int = heartbeat_consecutive_failures
-        self.monitored_devices: list[tuple[str, int]] = monitored_devices or []
+        self.monitored_devices: list[tuple[str | None, str, int]] = monitored_devices or []
         self.monitored_devices_consecutive_failures: int = monitored_devices_consecutive_failures
 
     @staticmethod
@@ -234,24 +234,34 @@ class Config:
             raise RuntimeError(f"HEARTBEAT_CONSECUTIVE_FAILURES must be positive, got: {heartbeat_consecutive_failures}")
 
         monitored_devices_raw = os.getenv("MONITORED_DEVICES", "").strip()
-        monitored_devices: list[tuple[str, int]] = []
-        for entry in monitored_devices_raw.split(","):
-            entry = entry.strip()
-            if not entry:
+        monitored_devices: list[tuple[str | None, str, int]] = []
+        for raw_entry in monitored_devices_raw.split(","):
+            raw_entry = raw_entry.strip()
+            if not raw_entry:
                 continue
-            if ":" in entry:
-                host, _, port_str = entry.rpartition(":")
+
+            name: str | None = None
+            remainder = raw_entry
+            if "=" in raw_entry:
+                name, _, remainder = raw_entry.partition("=")
+                name = name.strip()
+                remainder = remainder.strip()
+                if not name:
+                    raise RuntimeError(f"MONITORED_DEVICES entry {raw_entry!r} has an empty name before '='")
+
+            if ":" in remainder:
+                host, _, port_str = remainder.rpartition(":")
                 try:
                     port = int(port_str)
                 except ValueError:
-                    raise RuntimeError(f"MONITORED_DEVICES entry {entry!r} has a non-integer port")
+                    raise RuntimeError(f"MONITORED_DEVICES entry {raw_entry!r} has a non-integer port")
             else:
-                host, port = entry, DEFAULT_MONITORED_DEVICES_PORT
+                host, port = remainder, DEFAULT_MONITORED_DEVICES_PORT
             if not host.strip():
-                raise RuntimeError(f"MONITORED_DEVICES entry {entry!r} is missing a host")
+                raise RuntimeError(f"MONITORED_DEVICES entry {raw_entry!r} is missing a host")
             if not (0 < port < 65536):
-                raise RuntimeError(f"MONITORED_DEVICES entry {entry!r} has a port out of range (1-65535)")
-            monitored_devices.append((host, port))
+                raise RuntimeError(f"MONITORED_DEVICES entry {raw_entry!r} has a port out of range (1-65535)")
+            monitored_devices.append((name, host, port))
 
         try:
             monitored_devices_consecutive_failures = int(
