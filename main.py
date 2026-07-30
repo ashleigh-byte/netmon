@@ -329,9 +329,10 @@ def _wait_with_heartbeat(
             heartbeat_state["alerted"] = False
             heartbeat_state["down_since"] = None
 
-        for host, port in conf.monitored_devices:
-            label = f"{host}:{port}"
-            state = monitored_device_state.setdefault(label, {
+        for name, host, port in conf.monitored_devices:
+            key = f"{host}:{port}"
+            display = f"{name} ({key})" if name else key
+            state = monitored_device_state.setdefault(key, {
                 "consecutive_failures": 0,
                 "alerted": False,
                 "down_since": None,
@@ -347,17 +348,17 @@ def _wait_with_heartbeat(
                     and not state["alerted"]
                 ):
                     try:
-                        t.send_message(_monitored_device_down_alert_message(label, conf))
+                        t.send_message(_monitored_device_down_alert_message(display, conf))
                     except Exception as notify_err:
-                        log.error(f"Failed to send monitored-device-down alert for {label}: {notify_err}")
+                        log.error(f"Failed to send monitored-device-down alert for {display}: {notify_err}")
                     state["alerted"] = True
             else:
                 if state["alerted"]:
                     duration_seconds = (datetime.now(timezone.utc) - state["down_since"]).total_seconds()
                     try:
-                        t.send_message(_monitored_device_recovered_alert_message(label, duration_seconds))
+                        t.send_message(_monitored_device_recovered_alert_message(display, duration_seconds))
                     except Exception as notify_err:
-                        log.error(f"Failed to send monitored-device-recovered alert for {label}: {notify_err}")
+                        log.error(f"Failed to send monitored-device-recovered alert for {display}: {notify_err}")
                 state["consecutive_failures"] = 0
                 state["alerted"] = False
                 state["down_since"] = None

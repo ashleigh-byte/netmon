@@ -36,7 +36,7 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 REPO_URL="https://github.com/ashleigh-byte/netmon.git"
-BRANCH="full-integration-test"
+BRANCH="main"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # install_pkgs pkg1 [pkg2 ...]
