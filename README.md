@@ -73,7 +73,6 @@ Every `SLEEP_TIME` seconds (default 1800 = 30 min, configurable):
 ```bash
 git clone https://github.com/ashleigh-byte/netmon.git
 cd netmon
-git checkout full-integration-test
 bash setup-netmon.sh
 ```
 
