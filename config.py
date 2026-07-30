@@ -12,6 +12,9 @@ DEFAULT_OUTAGE_DOWNLOAD_THRESHOLD_MBPS = 20.0
 DEFAULT_OUTAGE_PING_THRESHOLD_MS = 150.0
 DEFAULT_OUTAGE_CONSECUTIVE_READINGS = 2
 DEFAULT_RETENTION_DAYS = 90
+DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS = 3
+DEFAULT_DEVICE_MISSING_RELIABILITY = 0.8
+DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS = 2
 
 class Config:
     def __init__(
@@ -33,6 +36,9 @@ class Config:
         outage_ping_threshold_ms: float = DEFAULT_OUTAGE_PING_THRESHOLD_MS,
         outage_consecutive_readings: int = DEFAULT_OUTAGE_CONSECUTIVE_READINGS,
         retention_days: int = DEFAULT_RETENTION_DAYS,
+        device_missing_lookback_days: int = DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS,
+        device_missing_reliability: float = DEFAULT_DEVICE_MISSING_RELIABILITY,
+        device_missing_consecutive_readings: int = DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS,
     ):
         self.ai_api_key: str = ai_api_key
         self.db_path: str = db_path
@@ -51,6 +57,9 @@ class Config:
         self.outage_ping_threshold_ms: float = outage_ping_threshold_ms
         self.outage_consecutive_readings: int = outage_consecutive_readings
         self.retention_days: int = retention_days
+        self.device_missing_lookback_days: int = device_missing_lookback_days
+        self.device_missing_reliability: float = device_missing_reliability
+        self.device_missing_consecutive_readings: int = device_missing_consecutive_readings
 
     @staticmethod
     def _parse_args():
@@ -160,6 +169,27 @@ class Config:
         if retention_days <= 0:
             raise RuntimeError(f"RETENTION_DAYS must be positive, got: {retention_days}")
 
+        try:
+            device_missing_lookback_days = int(os.getenv("DEVICE_MISSING_LOOKBACK_DAYS", DEFAULT_DEVICE_MISSING_LOOKBACK_DAYS))
+        except ValueError:
+            raise RuntimeError(f"DEVICE_MISSING_LOOKBACK_DAYS must be an integer, got: {os.getenv('DEVICE_MISSING_LOOKBACK_DAYS')!r}")
+        if device_missing_lookback_days <= 0:
+            raise RuntimeError(f"DEVICE_MISSING_LOOKBACK_DAYS must be positive, got: {device_missing_lookback_days}")
+
+        try:
+            device_missing_reliability = float(os.getenv("DEVICE_MISSING_RELIABILITY", DEFAULT_DEVICE_MISSING_RELIABILITY))
+        except ValueError:
+            raise RuntimeError(f"DEVICE_MISSING_RELIABILITY must be a number, got: {os.getenv('DEVICE_MISSING_RELIABILITY')!r}")
+        if not (0 < device_missing_reliability <= 1):
+            raise RuntimeError(f"DEVICE_MISSING_RELIABILITY must be between 0 (exclusive) and 1 (inclusive), got: {device_missing_reliability}")
+
+        try:
+            device_missing_consecutive_readings = int(os.getenv("DEVICE_MISSING_CONSECUTIVE_READINGS", DEFAULT_DEVICE_MISSING_CONSECUTIVE_READINGS))
+        except ValueError:
+            raise RuntimeError(f"DEVICE_MISSING_CONSECUTIVE_READINGS must be an integer, got: {os.getenv('DEVICE_MISSING_CONSECUTIVE_READINGS')!r}")
+        if device_missing_consecutive_readings <= 0:
+            raise RuntimeError(f"DEVICE_MISSING_CONSECUTIVE_READINGS must be positive, got: {device_missing_consecutive_readings}")
+
         if notifier == "telegram":
             if tg_bot_token.strip() == "":
                 raise RuntimeError("TG_BOT_TOKEN not found or empty in environment")
@@ -175,5 +205,6 @@ class Config:
             request_timeout, sleep_time, report_cycle_count,
             args.test_ai, ai_context_size,
             outage_download_threshold_mbps, outage_ping_threshold_ms, outage_consecutive_readings,
-            retention_days,
+            retention_days, device_missing_lookback_days,
+            device_missing_reliability, device_missing_consecutive_readings,
         )
