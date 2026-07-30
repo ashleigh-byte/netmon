@@ -1,7 +1,9 @@
 from uuid_extensions import uuid7
 import re
 import logging
+import socket
 import subprocess
+import time
 import xml.etree.ElementTree as ET
 import models
 from typing import Optional
@@ -47,6 +49,12 @@ class _SpeedTestResponse(BaseModel):
     bytes_received: int
     share: Optional[str]
     client: _ClientInfo
+    # Only present when using the Ookla CLI wrapper (install-ookla-speedtest.sh);
+    # the classic speedtest-cli JSON schema has no equivalent fields, so these
+    # stay None for that backend and any bufferbloat/jitter reporting is
+    # simply skipped rather than shown as a fake zero.
+    jitter: Optional[float] = None
+    packet_loss: Optional[float] = None
 
     @field_validator('timestamp', mode='before')
     @classmethod
@@ -58,6 +66,23 @@ class _SpeedTestResponse(BaseModel):
 
 
 class Runner:
+    @staticmethod
+    def ping_host(host: str, port: int = 443, timeout: float = 2.0) -> Optional[float]:
+        """
+        Lightweight reachability check: attempts a TCP connection to
+        host:port and returns the elapsed time in milliseconds, or None if
+        it failed or timed out. Uses a TCP connect rather than an ICMP
+        ping since ICMP typically needs raw-socket (root) privileges this
+        tool doesn't otherwise require.
+        """
+        start = time.monotonic()
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                pass
+        except OSError:
+            return None
+        return (time.monotonic() - start) * 1000
+
     def run_speedtest(self) -> models.NetworkMetric:
         args = ["speedtest", "--secure", "--single", "--json"]
 
@@ -80,23 +105,52 @@ class Runner:
             client=parsed_result.client.isp,
             server=parsed_result.server.name,
             bytes_sent=parsed_result.bytes_sent,
-            bytes_received=parsed_result.bytes_received
+            bytes_received=parsed_result.bytes_received,
+            jitter_ms=parsed_result.jitter,
+            packet_loss_pct=parsed_result.packet_loss,
         )
 
     @staticmethod
     def _parse_device(host: ET.Element) -> models.NetworkDevice | None:
-        addr   = host.find("address")
         status = host.find("status")
-        if addr is None or status is None or status.get("state") != "up":
+        if status is None or status.get("state") != "up":
             return None
+
+        ip: str | None = None
+        mac: str | None = None
+        vendor: str | None = None
+        for addr in host.findall("address"):
+            addrtype = addr.get("addrtype")
+            if addrtype == "ipv4":
+                ip = addr.get("addr")
+            elif addrtype == "mac":
+                # nmap only reports a MAC (and resolves vendor from its
+                # built-in OUI database) for hosts on the same local subnet
+                # it can ARP directly — this needs no extra scan flags,
+                # since the existing sudo ARP scan already returns it.
+                mac = addr.get("addr")
+                vendor = addr.get("vendor") or None
+
+        if not ip:
+            return None
+
+        hostname: str | None = None
+        hostnames_el = host.find("hostnames")
+        if hostnames_el is not None:
+            hostname_el = hostnames_el.find("hostname")
+            if hostname_el is not None:
+                hostname = hostname_el.get("name") or None
 
         times  = host.find("times")
         srtt   = times.get("srtt") if times is not None else None
         latency_ms = round(int(srtt) / 1000, 2) if srtt is not None else 0
 
         return models.NetworkDevice.create(
-            ip=addr.get("addr") or "",
-            latency_ms=latency_ms
+            ip=ip,
+            latency_ms=latency_ms,
+            mac=mac,
+            vendor=vendor,
+            hostname=hostname,
         )
 
     def run_devices_scan(self) -> list[models.NetworkDevice]:
