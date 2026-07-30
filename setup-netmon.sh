@@ -3,8 +3,8 @@
 # setup-netmon.sh
 #
 # One-shot setup for netmon on Linux, using the ashleigh-byte fork's
-# full-integration-test branch (a preview branch bundling every pending
-# PR, not yet reviewed/merged upstream). Prompts you to choose between
+# main branch (the personal "ground truth" branch with every feature
+# merged in -- not yet reviewed/merged upstream). Prompts you to choose between
 # the Ookla speedtest CLI backend and classic speedtest-cli -- see the
 # in-script prompt for the tradeoffs (Ookla saturates your line on every
 # test cycle to measure true capacity and reports jitter/packet loss;
@@ -36,7 +36,11 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 REPO_URL="https://github.com/ashleigh-byte/netmon.git"
-BRANCH="full-integration-test"
+# Intentionally "main", not whatever branch you're reading this on: main is
+# the personal "ground truth" branch with every feature merged in, and is
+# what this script is meant to deploy. If you want to stand up a specific
+# feature/testing branch instead, just edit this line yourself.
+BRANCH="main"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # install_pkgs pkg1 [pkg2 ...]
