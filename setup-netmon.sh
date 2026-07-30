@@ -2,10 +2,19 @@
 #
 # setup-netmon.sh
 #
-# One-shot setup for netmon on Debian, using the ashleigh-byte fork's
+# One-shot setup for netmon on Linux, using the ashleigh-byte fork's
 # full-integration-test branch (a preview branch bundling every pending
 # PR, not yet reviewed/merged upstream) with the Ookla speedtest CLI
 # backend instead of classic speedtest-cli.
+#
+# The system-package step (nmap/git/curl) supports Debian/Ubuntu (apt),
+# Fedora/RHEL/Rocky/Alma (dnf, falling back to yum), Arch/Manjaro
+# (pacman), openSUSE (zypper), and Alpine (apk) -- everything else in
+# this script (uv, git clone, the Ookla installer, .env setup) is
+# already distro-agnostic. Only the apt path has actually been
+# exercised end-to-end; the others follow each distro's own idiomatic
+# install command for the same three packages, but test on your
+# specific distro before relying on it unattended.
 #
 # Run as the normal user who will own the service (not root) -- it
 # calls sudo itself for the steps that need it.
@@ -27,8 +36,25 @@ BRANCH="full-integration-test"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> Installing system dependencies (nmap, git, curl)"
-sudo apt update
-sudo apt install -y nmap git curl
+if command -v apt >/dev/null 2>&1; then
+    sudo apt update
+    sudo apt install -y nmap git curl
+elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y nmap git curl
+elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y nmap git curl
+elif command -v pacman >/dev/null 2>&1; then
+    sudo pacman -Sy --noconfirm nmap git curl
+elif command -v zypper >/dev/null 2>&1; then
+    sudo zypper --non-interactive install nmap git curl
+elif command -v apk >/dev/null 2>&1; then
+    sudo apk add nmap git curl
+else
+    echo "Could not detect a supported package manager (apt/dnf/yum/pacman/zypper/apk)." >&2
+    echo "Install nmap, git, and curl yourself, then re-run this script -- it will" >&2
+    echo "pick up from the next step once those three commands are on PATH." >&2
+    exit 1
+fi
 
 echo "==> Allowing passwordless sudo for nmap (needed for ARP-based device scanning)"
 echo "$(whoami) ALL=(root) NOPASSWD: $(command -v nmap)" | sudo tee /etc/sudoers.d/netmon-nmap > /dev/null

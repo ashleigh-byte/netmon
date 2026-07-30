@@ -66,6 +66,26 @@ Every `SLEEP_TIME` seconds (default 1800 = 30 min, configurable):
 
 ---
 
+## Automated Setup Script (Linux)
+
+`setup-netmon.sh`, included in this repo, automates everything in [Quick Start](#quick-start) below in one pass: installs system dependencies, grants passwordless `sudo` for `nmap`, installs `uv` if missing, clones/checks out the repo (or just runs in place if you've already cloned it), runs `uv sync`, installs the [Ookla speedtest CLI backend](#installing-ooklas-cli) instead of classic `speedtest-cli`, and then walks you through configuring `.env` interactively — prompting for each required value, and optionally for the timing/outage/missing-device/heartbeat thresholds, with the documented default shown and accepted on a bare Enter.
+
+```bash
+git clone https://github.com/ashleigh-byte/netmon.git
+cd netmon
+git checkout full-integration-test
+bash setup-netmon.sh
+```
+
+Run it as your normal user, not root/sudo — it calls `sudo` itself only for the steps that need it. Pass `INSTALL_DIR=/some/path` to clone somewhere other than `~/netmon` when running it standalone (e.g. downloaded via `curl` onto a fresh machine with no checkout yet).
+
+> [!IMPORTANT]
+> **Linux only, and only the Debian/Ubuntu (`apt`) path has been exercised end-to-end.** The script also detects `dnf`, `yum`, `pacman`, `zypper`, and `apk` and uses each distro's own install command for the same three packages (`nmap`, `git`, `curl`), but those paths haven't been separately verified — test it (or just install those three packages yourself first) before relying on it unattended on a non-Debian distro. There's no macOS path; follow the manual steps below instead if you're not on Linux.
+
+Once it finishes, skip ahead to [Run the Bot](#5-run-the-bot) to test with `--test-ai` and set up the systemd service — everything before that is already done.
+
+---
+
 ## Quick Start
 
 ### 1. System Dependencies
