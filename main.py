@@ -248,16 +248,40 @@ def _heartbeat_down_alert_message(conf: "cfg.Config") -> str:
     )
 
 
-def _heartbeat_recovered_alert_message(duration_seconds: float) -> str:
+def _format_duration(duration_seconds: float) -> str:
     minutes = int(duration_seconds // 60)
     if minutes < 60:
-        duration_str = f"{minutes} min" if minutes > 0 else "under a minute"
-    else:
-        duration_str = f"{minutes // 60}h {minutes % 60}m"
-    return f"<b>✅ Connectivity heartbeat recovered</b>\n\nReachable again after about {duration_str}."
+        return f"{minutes} min" if minutes > 0 else "under a minute"
+    return f"{minutes // 60}h {minutes % 60}m"
 
 
-def _wait_with_heartbeat(t: Notifier, r: runner.Runner, conf: "cfg.Config", heartbeat_state: dict, total_seconds: float):
+def _heartbeat_recovered_alert_message(duration_seconds: float) -> str:
+    return f"<b>✅ Connectivity heartbeat recovered</b>\n\nReachable again after about {_format_duration(duration_seconds)}."
+
+
+def _monitored_device_down_alert_message(label: str, conf: "cfg.Config") -> str:
+    return (
+        "<b>🔴 Monitored device unreachable</b>\n\n"
+        f"<code>{label}</code> has failed {conf.monitored_devices_consecutive_failures} "
+        "consecutive checks in a row."
+    )
+
+
+def _monitored_device_recovered_alert_message(label: str, duration_seconds: float) -> str:
+    return (
+        f"<b>✅ Monitored device back</b>\n\n"
+        f"<code>{label}</code> is reachable again after about {_format_duration(duration_seconds)}."
+    )
+
+
+def _wait_with_heartbeat(
+    t: Notifier,
+    r: runner.Runner,
+    conf: "cfg.Config",
+    heartbeat_state: dict,
+    monitored_device_state: dict,
+    total_seconds: float,
+):
     """
     Sleeps for total_seconds like the plain time.sleep() this replaces, but
     in heartbeat_interval_seconds chunks, doing a lightweight TCP-connect
@@ -268,6 +292,11 @@ def _wait_with_heartbeat(t: Notifier, r: runner.Runner, conf: "cfg.Config", hear
     notice. Deliberately single-threaded (no background thread) to match
     the rest of this codebase and avoid any concurrency concerns with the
     shared sqlite connection or notifier HTTP calls.
+
+    On the same cadence, also checks any user-configured MONITORED_DEVICES
+    (specific routers/switches/APs etc. the user wants watched, as opposed
+    to the general internet-reachability heartbeat above) and alerts per
+    device on down/recovery, independently of the heartbeat state.
     """
     elapsed = 0.0
     while elapsed < total_seconds:
@@ -299,6 +328,39 @@ def _wait_with_heartbeat(t: Notifier, r: runner.Runner, conf: "cfg.Config", hear
             heartbeat_state["consecutive_failures"] = 0
             heartbeat_state["alerted"] = False
             heartbeat_state["down_since"] = None
+
+        for host, port in conf.monitored_devices:
+            label = f"{host}:{port}"
+            state = monitored_device_state.setdefault(label, {
+                "consecutive_failures": 0,
+                "alerted": False,
+                "down_since": None,
+            })
+
+            device_latency = r.ping_host(host, port)
+            if device_latency is None:
+                state["consecutive_failures"] += 1
+                if state["down_since"] is None:
+                    state["down_since"] = datetime.now(timezone.utc)
+                if (
+                    state["consecutive_failures"] >= conf.monitored_devices_consecutive_failures
+                    and not state["alerted"]
+                ):
+                    try:
+                        t.send_message(_monitored_device_down_alert_message(label, conf))
+                    except Exception as notify_err:
+                        log.error(f"Failed to send monitored-device-down alert for {label}: {notify_err}")
+                    state["alerted"] = True
+            else:
+                if state["alerted"]:
+                    duration_seconds = (datetime.now(timezone.utc) - state["down_since"]).total_seconds()
+                    try:
+                        t.send_message(_monitored_device_recovered_alert_message(label, duration_seconds))
+                    except Exception as notify_err:
+                        log.error(f"Failed to send monitored-device-recovered alert for {label}: {notify_err}")
+                state["consecutive_failures"] = 0
+                state["alerted"] = False
+                state["down_since"] = None
 
 
 
@@ -358,6 +420,8 @@ def main():
         "alerted": False,
         "down_since": None,
     }
+    # Per-device state for MONITORED_DEVICES, keyed by "host:port".
+    monitored_device_state: dict = {}
 
     with (
         sqlite.DB.init(conf.db_path) as database,
