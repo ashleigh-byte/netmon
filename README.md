@@ -274,6 +274,21 @@ Full speed test cycles can be 30+ minutes apart, so a short outage could start a
 
 ---
 
+## Monitored Devices
+
+The heartbeat above answers "is the internet reachable at all?" This is different: a specific list of devices *you* name — a router, a switch, an access point, a NAS, anything with a TCP port you can probe — checked individually, on the same `HEARTBEAT_INTERVAL_SECONDS` cadence as the heartbeat. Each device is tracked and alerted on independently: once after `MONITORED_DEVICES_CONSECUTIVE_FAILURES` failed checks in a row, then again when it comes back.
+
+Configure it as a comma-separated list of `host` or `host:port` entries. Port defaults to `80` (a typical router/AP admin UI) when omitted — override it per-entry for devices that only answer on something else (e.g. `192.168.1.1:443` for an HTTPS-only admin UI, or a port you know is open on a switch/NAS).
+
+| Variable | Description |
+| :--- | :--- |
+| `MONITORED_DEVICES` | *Optional.* Comma-separated `host` or `host:port` entries to watch (default: none — feature is off) |
+| `MONITORED_DEVICES_CONSECUTIVE_FAILURES` | *Optional.* Consecutive failed checks before alerting, per device (positive integer, default `2`) |
+
+Example: `MONITORED_DEVICES=192.168.1.1,192.168.1.2:8080,nas.local:22`
+
+---
+
 ## Example Output
 
 ### Hourly Short Status Update
