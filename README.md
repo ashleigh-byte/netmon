@@ -188,9 +188,21 @@ Multi-threaded speed tests (including Ookla's official CLI, and the speedtest.ne
 Two consequences worth knowing:
 
 * **Don't compare netmon's numbers directly against speedtest.net in a browser.** The browser test is multi-threaded and will read higher. That gap is methodology, not a fault in your line.
-* **On very fast links (roughly 500 Mbps+), expect single-stream figures to sit well below your subscribed speed.** Beyond the methodology gap, `speedtest-cli` is pure Python, so at gigabit speeds its own CPU overhead starts contributing too.
+* **On very fast links (roughly 500 Mbps+), expect single-stream figures to sit well below your subscribed speed.** Beyond the methodology gap, `speedtest-cli` is pure Python, so at gigabit speeds its own CPU overhead starts contributing too — see [Installing Ookla's CLI](#installing-ooklas-cli) below if this matters for your connection.
 
 Since netmon exists to track *trends*, consistency matters more than peak numbers: keep one measurement method for the lifetime of your database. Swapping the backend mid-history puts a step change in your 24-hour graph that the AI commentary will faithfully report as a real speed jump.
+
+### Installing Ookla's CLI
+
+If your reported speeds look suspiciously low compared to your known line speed (per the 500 Mbps+ note above), switch to **Ookla's official CLI** instead of `speedtest-cli`:
+
+```bash
+sudo bash install-ookla-speedtest.sh
+```
+
+This pulls Ookla's static binary tarball directly (matched to your CPU architecture: x86_64, aarch64, armhf, or i386) rather than adding Ookla's apt repository. That avoids a real failure mode on less mainstream distros/architectures (e.g. Armbian, Orange Pi) where the apt repo doesn't carry a build for the exact distro/arch combination — an apt-based install can fail partway through, after the repo keyring is already added, leaving the system half-configured. This script makes no system changes at all if the download fails.
+
+No application code changes are required — netmon keeps calling `speedtest --secure --single --json` exactly as before, now backed by Ookla's engine.
 
 ---
 
@@ -276,18 +288,6 @@ netmon/
 ## License
 
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more details.
-
-## Speed Test Backend: Default vs Ookla
-
-By default netmon shells out to `speedtest-cli` (the classic Python tool by sivel), matching the `speedtest --secure --single --json` call in `runner.py`. This works fine for most home connections, but it is **single-threaded**, so on connections above roughly 500 Mbps the tool itself — not your actual line — becomes the bottleneck. On multi-gigabit fiber, it can under-report real throughput by 5–10x.
-
-If your reported speeds look suspiciously low compared to your known line speed, switch to **Ookla's official CLI**:
-
-```bash
-sudo bash install-ookla-speedtest.sh
-```
-
-Unlike an apt-based install, this pulls Ookla's static binary tarball directly (matched to your CPU architecture: x86_64, aarch64, armhf, or i386) rather than adding Ookla's apt repository. That avoids a real failure mode on less mainstream distros/architectures (e.g. Armbian, Orange Pi) where the apt repo doesn't carry a build for the exact distro/arch combination — an apt-based install can fail partway through, after the repo keyring is already added, leaving the system half-configured. This script makes no system changes at all if the download fails.
 
 No application code changes are required — netmon keeps calling `speedtest --secure --single --json` exactly as before, now backed by Ookla's engine.
 
