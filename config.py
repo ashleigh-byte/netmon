@@ -11,6 +11,7 @@ DEFAULT_REPORT_CYCLE_COUNT = 8
 DEFAULT_OUTAGE_DOWNLOAD_THRESHOLD_MBPS = 20.0
 DEFAULT_OUTAGE_PING_THRESHOLD_MS = 150.0
 DEFAULT_OUTAGE_CONSECUTIVE_READINGS = 2
+DEFAULT_RETENTION_DAYS = 90
 
 class Config:
     def __init__(
@@ -31,6 +32,7 @@ class Config:
         outage_download_threshold_mbps: float = DEFAULT_OUTAGE_DOWNLOAD_THRESHOLD_MBPS,
         outage_ping_threshold_ms: float = DEFAULT_OUTAGE_PING_THRESHOLD_MS,
         outage_consecutive_readings: int = DEFAULT_OUTAGE_CONSECUTIVE_READINGS,
+        retention_days: int = DEFAULT_RETENTION_DAYS,
     ):
         self.ai_api_key: str = ai_api_key
         self.db_path: str = db_path
@@ -48,6 +50,7 @@ class Config:
         self.outage_download_threshold_mbps: float = outage_download_threshold_mbps
         self.outage_ping_threshold_ms: float = outage_ping_threshold_ms
         self.outage_consecutive_readings: int = outage_consecutive_readings
+        self.retention_days: int = retention_days
 
     @staticmethod
     def _parse_args():
@@ -150,6 +153,13 @@ class Config:
         if outage_consecutive_readings <= 0:
             raise RuntimeError(f"OUTAGE_CONSECUTIVE_READINGS must be positive, got: {outage_consecutive_readings}")
 
+        try:
+            retention_days = int(os.getenv("RETENTION_DAYS", DEFAULT_RETENTION_DAYS))
+        except ValueError:
+            raise RuntimeError(f"RETENTION_DAYS must be an integer, got: {os.getenv('RETENTION_DAYS')!r}")
+        if retention_days <= 0:
+            raise RuntimeError(f"RETENTION_DAYS must be positive, got: {retention_days}")
+
         if notifier == "telegram":
             if tg_bot_token.strip() == "":
                 raise RuntimeError("TG_BOT_TOKEN not found or empty in environment")
@@ -165,4 +175,5 @@ class Config:
             request_timeout, sleep_time, report_cycle_count,
             args.test_ai, ai_context_size,
             outage_download_threshold_mbps, outage_ping_threshold_ms, outage_consecutive_readings,
+            retention_days,
         )
