@@ -692,7 +692,7 @@ def main():
                     log.error(f"Additionally failed to notify about the error: {notify_err}")
                 raise
 
-            _wait_with_heartbeat(t, r, conf, heartbeat_state, conf.sleep_time)
+            _wait_with_heartbeat(t, r, conf, heartbeat_state, monitored_device_state, conf.sleep_time)
 
 if __name__ == "__main__":
     main()
