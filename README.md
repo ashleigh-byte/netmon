@@ -35,7 +35,7 @@ Every `SLEEP_TIME` seconds (default 1800 = 30 min, configurable):
 
 1. **Speed Test:** Measures download/upload speeds, ping latency, ISP, and test server details using `speedtest-cli` (see [the note on measurement mode](#a-note-on-measurement-mode)).
 2. **LAN Scan:** Scans the local subnet using `nmap` ARP scan to identify active devices, including MAC address, vendor, and hostname where resolvable (see [Device Watch](#device-watch)).
-3. **Local Storage:** Saves metrics & device details directly to a local `metrics.sql` SQLite database.
+3. **Local Storage:** Saves metrics & device details directly to a local `metrics.sql` SQLite database, automatically pruning rows older than `RETENTION_DAYS` (default 90 days) so the file doesn't grow forever.
 4. **Status Alert:** Sends a concise status update to your chosen notifier (*"all good"* or *"line is dying"*).
 5. **24h AI Report:** Every `REPORT_CYCLE_COUNT` cycles (default 8, i.e. ~4h), generates a **24-hour trend graph** via `matplotlib` alongside a sarcastic LLM analysis of network load, speed fluctuations, and any notable new devices on the network.
 6. **Instant Outage Alerting:** Watches every cycle for an outright failed speed test or a degraded reading, alerting immediately rather than waiting for the next scheduled report (see [Instant Outage & Degradation Alerting](#instant-outage--degradation-alerting)).
@@ -133,6 +133,7 @@ cp .env.example .env
 | `SLEEP_TIME` | *Optional.* Seconds between each speed test + device scan cycle (positive integer, default `1800`) |
 | `REPORT_CYCLE_COUNT` | *Optional.* How many cycles between detailed AI reports with graph (positive integer, default `8`) |
 | `AI_CONTEXT_SIZE` | *Optional.* Sets Ollama's `num_ctx` per-request, to stop a local model's default context window from silently truncating a long prompt + a day of history. No effect on cloud OpenAI — leave unset unless self-hosting the AI backend. |
+| `RETENTION_DAYS` | *Optional.* How many days of metrics/device-scan history to keep before old rows are pruned automatically (positive integer, default `90`) |
 
 > [!TIP]
 > **You're not locked into OpenAI.** `ai.py` talks to any OpenAI-compatible endpoint, so a local inference server (e.g. [Ollama](https://ollama.com), LM Studio) works too — just point `AI_BASE_URL` at it. For report quality that holds up, use a model with **at least ~7B parameters**; a solid local pick is **Gemma 4 12B at 4-bit (QAT) quantization** (`gemma4:12b-it-qat` via Ollama), which fits comfortably on 16GB of RAM.
