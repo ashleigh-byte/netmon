@@ -208,15 +208,11 @@ Classic `speedtest-cli` has no jitter or packet-loss data. If you instead run ne
 
 ## Device Watch
 
-Every device scan records each device's MAC address, vendor (resolved from `nmap`'s built-in OUI database), and hostname where available. `nmap` can only resolve a MAC for hosts on the same local subnet it can ARP directly — off-subnet or otherwise hidden devices are still counted, just not identified.
+Every device scan records each device's MAC address, vendor (resolved from `nmap`'s built-in OUI database), and hostname where available. `nmap` can only resolve a MAC for hosts on the same local subnet it can ARP directly — off-subnet or otherwise hidden devices are still counted, just not identified. A device with no resolvable MAC is never flagged by either check below, since there's no reliable identity to compare against.
 
-Using MAC address history, the detailed AI report includes a **Device Watch** section that flags any device whose MAC hasn't been seen on the network in the last 14 days, alongside a vendor-count breakdown of everything currently online. A device with no resolvable MAC is never flagged as new, since there's no reliable identity to compare against.
+**New devices:** the detailed AI report includes a **Device Watch** section that flags any device whose MAC hasn't been seen on the network in the last 14 days, alongside a vendor-count breakdown of everything currently online.
 
----
-
-## Missing-Device Alerting
-
-Each device scan records a MAC address, vendor, and hostname where resolvable (`nmap` can only resolve a MAC for hosts on the same local subnet it can ARP directly). Using that history, netmon flags a device as "reliably known" once it's been seen in at least `DEVICE_MISSING_RELIABILITY` of scans over the last `DEVICE_MISSING_LOOKBACK_DAYS` — if a reliably-known device then vanishes for `DEVICE_MISSING_CONSECUTIVE_READINGS` consecutive checks, netmon sends an instant alert, and another once it reappears with how long it was gone. A device with no resolvable MAC is never flagged, since there's no reliable identity to track.
+**Missing devices:** the reverse case — netmon flags a device as "reliably known" once it's been seen in at least `DEVICE_MISSING_RELIABILITY` of scans over the last `DEVICE_MISSING_LOOKBACK_DAYS`. If a reliably-known device then vanishes for `DEVICE_MISSING_CONSECUTIVE_READINGS` consecutive checks, netmon sends an instant alert, and another once it reappears with how long it was gone.
 
 | Variable | Description |
 | :--- | :--- |
