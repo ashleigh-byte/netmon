@@ -238,14 +238,40 @@ def sigterm_handler(signum, frame):
     sys.exit(0)
 
 
-def _heartbeat_down_alert_message(conf: "cfg.Config") -> str:
+def _heartbeat_down_alert_message(conf: "cfg.Config", scan_summary: str) -> str:
     return (
         "<b>🔴 Connectivity heartbeat unreachable</b>\n\n"
         f"{conf.heartbeat_consecutive_failures} consecutive checks against "
         f"<code>{conf.heartbeat_host}:{conf.heartbeat_port}</code> have failed "
         "between full speed test cycles. This looks like the connection is "
-        "down right now -- a full report will follow on the next scheduled cycle."
+        "down right now -- a full report will follow on the next scheduled cycle.\n\n"
+        f"<b>Diagnostic LAN scan:</b> {scan_summary}"
     )
+
+
+def _heartbeat_diagnostic_scan_summary(r: "runner.Runner") -> str:
+    """
+    Runs a full nmap LAN scan the moment a heartbeat outage is confirmed, to
+    help tell apart "just the WAN/ISP is down" from "the local network
+    itself has a problem" (dead router/switch, downed interface, etc.) --
+    an ARP scan only needs the local segment to work and doesn't depend on
+    the WAN link that just failed, so its result is a useful signal on its
+    own regardless of which kind of failure this is.
+    """
+    try:
+        devices = r.run_devices_scan()
+    except Exception as scan_err:
+        log.error(f"Diagnostic LAN scan failed during heartbeat-down alert: {scan_err}")
+        return (
+            f"scan itself failed ({scan_err}) -- this points at a local network "
+            "problem (router/switch/interface), not just the ISP."
+        )
+    if not devices:
+        return (
+            "0 devices visible on the LAN -- this may be a local network "
+            "problem (router/switch), not just the ISP."
+        )
+    return f"{len(devices)} device(s) still visible on the LAN -- looks like just the WAN/ISP link is down."
 
 
 def _format_duration(duration_seconds: float) -> str:
@@ -313,8 +339,9 @@ def _wait_with_heartbeat(
                 heartbeat_state["consecutive_failures"] >= conf.heartbeat_consecutive_failures
                 and not heartbeat_state["alerted"]
             ):
+                scan_summary = _heartbeat_diagnostic_scan_summary(r)
                 try:
-                    t.send_message(_heartbeat_down_alert_message(conf))
+                    t.send_message(_heartbeat_down_alert_message(conf, scan_summary))
                 except Exception as notify_err:
                     log.error(f"Failed to send heartbeat-down alert: {notify_err}")
                 heartbeat_state["alerted"] = True
