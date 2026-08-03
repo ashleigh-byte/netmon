@@ -264,6 +264,8 @@ Every device scan records each device's MAC address, vendor (resolved from `nmap
 
 Full speed test cycles can be 30+ minutes apart, so a short outage could start and fully resolve without ever being noticed. Between cycles, netmon runs a lightweight TCP connect (not ICMP — avoids needing root) to `HEARTBEAT_HOST:HEARTBEAT_PORT` every `HEARTBEAT_INTERVAL_SECONDS`, and alerts once after `HEARTBEAT_CONSECUTIVE_FAILURES` failed checks in a row, then again on recovery.
 
+The moment that down-alert fires, netmon also runs a full `nmap` LAN scan and includes the result in the alert — this helps tell apart "just the WAN/ISP is down" from "the local network itself has a problem" (dead router/switch, downed interface). An ARP scan only needs the local segment, not the WAN link that just failed, so devices still showing up means the LAN itself is fine and the ISP/uplink is the culprit; zero devices (or the scan failing outright) points at a local network problem instead.
+
 | Variable | Description |
 | :--- | :--- |
 | `HEARTBEAT_HOST` | *Optional.* Host to check reachability against (default `1.1.1.1`) |
