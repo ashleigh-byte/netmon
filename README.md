@@ -155,6 +155,7 @@ cp .env.example .env
 | `REPORT_CYCLE_COUNT` | *Optional.* How many cycles between detailed AI reports with graph (positive integer, default `8`) |
 | `AI_CONTEXT_SIZE` | *Optional.* Sets Ollama's `num_ctx` per-request, to stop a local model's default context window from silently truncating a long prompt + a day of history. No effect on cloud OpenAI — leave unset unless self-hosting the AI backend. |
 | `RETENTION_DAYS` | *Optional.* How many days of metrics/device-scan history to keep before old rows are pruned automatically (positive integer, default `90`) |
+| `HOME_ASSISTANT_WEBHOOK_URL` | *Optional.* Home Assistant webhook URL — every cycle's results are also POSTed here (see [Home Assistant integration](#home-assistant-integration-optional)) |
 
 > [!TIP]
 > **You're not locked into OpenAI.** `ai.py` talks to any OpenAI-compatible endpoint, so a local inference server (e.g. [Ollama](https://ollama.com), LM Studio) works too — just point `AI_BASE_URL` at it. For report quality that holds up, use a model with **at least ~7B parameters**; a solid local pick is **Gemma 4 12B at 4-bit (QAT) quantization** (`gemma4:12b-it-qat` via Ollama), which fits comfortably on 16GB of RAM.
@@ -207,6 +208,35 @@ Reports are sent as an embed on Discord (4096-character limit) rather than plain
 
 > [!WARNING]
 > Treat both the Telegram bot token and the Discord webhook URL as secrets — anyone with either can post messages through your bot/webhook. Don't commit them to version control (`.env` is already git-ignored).
+
+### Home Assistant integration (optional)
+
+In addition to your Telegram/Discord notifier, netmon can push every cycle's result to [Home Assistant](https://www.home-assistant.io/) through a webhook, so speeds, ping, jitter, packet loss, connection state and the LAN device count can drive HA dashboards, history graphs and automations. It's off unless `HOME_ASSISTANT_WEBHOOK_URL` is set, and it's best-effort: if HA is unreachable, netmon logs a warning and carries on.
+
+Each cycle POSTs JSON like this:
+
+```json
+{"source": "netmon", "state": "ok", "download": 2161.4, "upload": 2203.8,
+ "ping": 9.6, "jitter": 1.2, "packet_loss": 0.0, "devices": 87,
+ "server": "Example ISP - London", "isp": "Example Broadband",
+ "timestamp": "2026-11-16T11:45:02+00:00"}
+```
+
+* `state` is `ok`, `degraded` (below `OUTAGE_DOWNLOAD_THRESHOLD_MBPS` or above `OUTAGE_PING_THRESHOLD_MS`) or `down` (the speed test failed outright; a `down` post carries only `state`). An Ookla "too many requests" rate-limit refusal is not reported as `down`.
+* `download`/`upload` are Mbit/s; `ping`/`jitter` are ms; `packet_loss` is %. `jitter`/`packet_loss` are `null` with the classic `speedtest-cli` backend.
+
+**Setup:**
+
+1. In Home Assistant, create helpers for the values you want (**Settings → Devices & services → Helpers**), e.g. *Number* helpers for download, upload, ping, jitter, packet loss and devices, and a *Dropdown* with options `ok`, `degraded`, `down`.
+2. Create an automation with a **Webhook** trigger. Pick a long random webhook ID (it acts as the password), allow `POST`, and turn off *Only accessible from the local network* if netmon reaches HA through your public hostname. Then set your helpers from the payload, e.g. `{{ trigger.json.download }}`.
+3. In `.env`, set the URL HA shows for that trigger:
+   ```
+   HOME_ASSISTANT_WEBHOOK_URL=https://homeassistant.example.com/api/webhook/your-long-random-id
+   ```
+4. Restart netmon. The next cycle's result appears in HA (check the automation's trace if it doesn't).
+
+> [!WARNING]
+> Treat the webhook URL as a secret too: anyone who has it can post fake readings into Home Assistant.
 
 ---
 
@@ -397,6 +427,7 @@ netmon/
 ├── ai.py                          # OpenAI API client & sarcastic text generator
 ├── tg.py                          # Telegram bot dispatch helper
 ├── discord_hook.py                # Discord webhook dispatch helper
+├── ha_hook.py                     # Optional Home Assistant webhook (per-cycle results)
 ├── config.py                      # Environment variable validation & config
 ├── notifier.py                    # Notifier protocol & shared chat-action enum
 ├── .env.example                   # Template for your .env config file

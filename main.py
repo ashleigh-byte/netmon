@@ -13,6 +13,7 @@ import discord_hook
 import time
 import models
 import runner
+import ha_hook
 from notifier import ChatAction, Notifier
 
 REPORT_SYSTEM_PROMPT = """
@@ -474,6 +475,10 @@ def main():
                             log.error(f"Failed to send outage alert: {notify_err}")
                         outage_alerted = True
                     connection_state = "down"
+                    # Ookla refusing because of its rate limit is not an outage, so
+                    # don't tell Home Assistant the line is down.
+                    if "too many requests" not in str(speedtest_exc).lower():
+                        ha_hook.post("down")
                     time.sleep(conf.sleep_time)
                     continue  # no metric this cycle -- skip device scan/db/reports entirely
 
@@ -514,6 +519,7 @@ def main():
                     speedtest = models.SpeedTest.create(metric.id, device_scan_id)
                     database.add_speedtest(speedtest)
                 log.info(f"Speedtest has been added: {speedtest}")
+                ha_hook.post(connection_state, metric, len(all_devices))
 
                 missing_now = database.get_missing_devices(
                     conf.device_missing_lookback_days, conf.device_missing_reliability
