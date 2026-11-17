@@ -5,7 +5,7 @@
 <h1 align="center">netmon</h1>
 
 <p align="center">
-  <b>Self-hosted local network monitor with 24-hour speed charts & sarcastic AI commentary delivered straight to Telegram or Discord.</b>
+  <b>Self-hosted local network monitor with 24-hour speed charts & sarcastic AI commentary delivered straight to Telegram or Discord, and Home Assistant.</b>
 </p>
 
 <p align="center">
