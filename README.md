@@ -25,7 +25,7 @@ A lightweight local bot that runs a speed test on your network every 30 minutes,
 Every 4 hours, it delivers a **detailed report** complete with a 24-hour trend graph and a sarcastic, LLM-generated commentary on your network's behavior (*"someone's hogging the bandwidth again"*).
 
 > [!NOTE]
-> **100% Private & Self-Hosted:** No external metric servers involved — everything runs locally on your machine or Raspberry Pi. Only text reports and graph images are dispatched to your chosen notifier (Telegram or Discord).
+> **100% Private & Self-Hosted:** No external metric servers involved — everything runs locally on your machine or Raspberry Pi. Only text reports and graph images are dispatched to your chosen notifier (Telegram or Discord), plus speed-test figures to your own Home Assistant if you enable the optional webhook.
 
 ---
 
